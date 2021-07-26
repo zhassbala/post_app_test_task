@@ -6,6 +6,8 @@ from .serializers import UserSerializer, PostSerializer, TagSerializer
 from .models import User, Post, Tag
 
 import jwt, datetime
+from dateutil.parser import parse as date_parse
+from django.utils import timezone
 
 
 @api_view(['GET', 'POST'])
@@ -24,6 +26,10 @@ def index(request):
         '/api/post_create': '',
         '/api/post_update': '',
         '/api/post_delete': '',
+        '/api/get_posts_by_tags': '',
+        '/api/get_posts_by_date': '',
+        '/api/get_user': 'Returns id, username and email of the logged user',
+        '/api/my_posts': 'Returns the posts that are created by logged user',
     }
     return Response(response)
 
@@ -162,9 +168,9 @@ def post_create(request):
     post.save()
 
     for tag in tags:
-        tag_object = Tag.objects.filter(title=tag).first()
+        tag_object = Tag.objects.filter(title=tag.capitalize()).first()
         if not tag_object:
-            tag_object = Tag(title=tag)
+            tag_object = Tag(title=tag.capitalize())
             tag_object.save()
 
         post.tags.add(tag_object)
@@ -183,7 +189,7 @@ def post_update(request):
         title: str
         content: str
         tags: array
-    and has one required parameter:
+    and takes one required parameter:
         id: int -> id of the requested post
     :param request:
     :return:
@@ -220,8 +226,11 @@ def post_update(request):
 
 @api_view(['POST', 'DELETE'])
 def post_delete(request):
-    # TODO implement post_delete function
-
+    """
+    Deletes post with given id if the user can access it.
+    :param request:
+    :return:
+    """
     user = check_auth(request)
     post = Post.objects.get(id=request.data['id'])
 
@@ -233,4 +242,72 @@ def post_delete(request):
 
     post.delete()
     return response
+
+
+@api_view(['POST'])
+def get_posts_by_tags(request):
+    """
+    This view function returns serialized posts that have tags that are given in request body
+    Takes one required parameter:
+        - tags: an array of tags for search.
+    Also can take optional 'intersection' argument:
+        if true, returns posts that have all the given tags
+        if false, returns posts that have at least one of the given tags.
+        by default is FALSE.
+    :param request:
+    :return:
+    """
+    tags = request.data['tags']
+    intersection = False
+
+    posts = Post.objects.all()
+
+    if 'intersection' in request.data:
+        intersection = request.data['intersection']
+
+    if intersection:
+        for tag in tags:
+            posts = posts.filter(tags__title__icontains=tag)
+    else:
+        posts = posts.filter(tags__title__in=tags).distinct()
+
+    posts = posts.order_by('-date_posted')
+    serializer = PostSerializer(posts, many=True)
+
+    return Response(serializer.data)
+
+
+@api_view(['GET', 'POST'])
+def get_posts_by_date(request):
+    """
+    This endpoint returns serialized posts that are filtered by given dates
+    Can take the following parameters, all are optional:
+        - from: can be any datetime string format, ex. 9-06-2021 or 09.06.2021, etc. by default is 01.01.1970
+        - until: the same as 'from'. by default is timezone.now()
+        - latest: can be true or false, if true, posts are sorted in reversed fashion by date. by default is true
+    :param request:
+    :return: Response
+    """
+    date_from = timezone.datetime(1970, 1, 1)
+    date_until = timezone.now()
+    latest = True
+
+    if 'from' in request.data:
+        date_from = date_parse(request.data['from'])
+
+    if 'until' in request.data:
+        date_until = date_parse(request.data['until'])
+
+    if 'latest' in request.data:
+        latest = request.data['latest']
+
+    if latest:
+        order = '-date_posted'
+    else:
+        order = 'date_posted'
+
+    posts = Post.objects.filter(date_posted__range=[date_from, date_until]).order_by(order)
+    serializer = PostSerializer(posts, many=True)
+
+    return Response(serializer.data)
 

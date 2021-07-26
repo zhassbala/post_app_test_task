@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 
 class User(AbstractUser):
@@ -27,8 +28,9 @@ class Tag(models.Model):
 class Post(models.Model):
     title = models.CharField(max_length=255)
     content = models.CharField(max_length=10000)
-    tags = models.ManyToManyField(Tag, related_name='posts', null=True, blank=True)
+    tags = models.ManyToManyField(Tag, related_name='posts')
     editor = models.ForeignKey(User, related_name='posts', on_delete=models.SET_NULL, null=True)
+    date_posted = models.DateTimeField(default=timezone.now)
 
     class Meta:
         verbose_name = 'Post'
